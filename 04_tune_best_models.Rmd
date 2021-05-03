@@ -1,0 +1,92 @@
+---
+title: "tuning an optimal model"
+author: "Ryan Schubert"
+date: "May 2, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(data.table)
+library(ggplot2)
+library(corrplot)
+library(visdat)
+library(viridis)
+library(glmnet)
+library(randomForest)
+library(e1071)
+library(MASS)
+library(MLmetrics)
+library(gbm)
+library(caret)
+library(keras)
+"%&%" = function(a,b) paste0(a,b)
+```
+
+## R Markdown
+
+```{r cars}
+dir<-"C:\\Users\\rshoo\\OneDrive\\Desktop\\Rush Interview\\"
+data<-readRDS(dir %&% "labelled_data_with_pcs.RDS")
+
+
+
+#female is now 0, male is now 1
+labelled_data1<-data %>% mutate(sex=as.numeric(as.factor(sex))-1,responder=as.factor(responder))
+```
+
+
+```{r}
+
+k<-10
+
+rf_tuning_grid<-expand.grid(mtry=1:15)
+gbm_tuning_grid<-expand.grid(interaction.depth = c(1,2,3), 
+                      n.trees = (1:10)*50, 
+                      shrinkage = c(0.001,0.01,0.1),
+                      n.minobsinnode = c(1,5,10,20))
+rank<-20
+store_rank<-vector(mode="list",length=rank)
+for ( r in 1:rank){
+  fold_ids<-sample(1:10,nrow(labelled_data1),replace=T)
+  misclass_rate<-matrix(NA,nrow = k,ncol=2)
+  for (fold in 1:k){
+    holdout<-labelled_data1[fold_ids == fold,]
+    holdin<-labelled_data1[fold_ids != fold,]
+    
+    fitControl = trainControl(method="cv", number=10, returnResamp = "all")
+    rf_model = train(responder~.,
+                  data=holdin,
+                  method="rf",
+                  distribution="bernoulli",
+                  trControl=fitControl,
+                  verbose=F,
+                  ntree=500,
+                  tuneGrid=rf_tuning_grid)
+    gbm_model = train(responder~.,
+                      data=holdin,
+                      method="gbm",
+                      distribution="bernoulli",
+                      trControl=fitControl,
+                      verbose=F,
+                      tuneGrid=gbm_tuning_grid)
+    confusion<-table(round(predict(rf_model,newdata=holdout,type="prob")[,"1"]),holdout$responder)
+    misclass_rate[fold,1]<-1-sum(diag(confusion))/sum(confusion)
+    confusion<-table(round(predict(gbm_model,newdata=holdout,type="prob")[,"1"]),holdout$responder)
+    misclass_rate[fold,2]<-1-sum(diag(confusion))/sum(confusion)
+  }
+  colMeans(misclass_rate)
+  store_rank[[r]]<-misclass_rate
+}
+```
+
+```{r}
+
+iterated_performance<-store_rank[[1]]
+for (i in 2:20){
+  iterated_performance<-rbind(iterated_performance,store_rank[[i]])
+}
+1-colMeans(iterated_performance)
+
+```

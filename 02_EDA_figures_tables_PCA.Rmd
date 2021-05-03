@@ -1,0 +1,333 @@
+---
+title: "01b_make_nice_tables_and_figures"
+author: "Ryan Schubert"
+date: "May 1, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(data.table)
+library(ggplot2)
+library(corrplot)
+library(visdat)
+library(viridis)
+library(factoextra)
+library(cowplot)
+"%&%" = function(a,b) paste0(a,b)
+```
+
+## Read in the data
+
+```{r}
+dir<-"C:\\Users\\rshoo\\OneDrive\\Desktop\\Rush Interview\\"
+data<-fread(dir %&% "DSRound2Task.csv")
+
+# str(data)
+
+#ids is redundant and won't be used for prediction so remove it here
+ids<-data %>% dplyr::select(id)
+#convert sex to numeric
+#female is now 0, male is now 1
+data<-data %>% dplyr::select(-id) %>% mutate()
+```
+
+```{r}
+
+(sex_dist<-data.frame(table(data$sex)/nrow(data) * 100) %>% 
+  ggplot(data=.) +
+  geom_col(aes(x="Sex",y=Freq,fill=Var1)) +
+  theme_bw() +
+  coord_flip() + 
+  xlab("")+
+  ylab("")+
+  labs(fill="Sex") +
+  theme(legend.position = "bottom",axis.title.x=element_blank(),axis.title.y=element_blank()) +
+  scale_fill_viridis(discrete=T))
+(cohort_dist<-data.frame(table(data$cohorttype)/nrow(data) * 100) %>% 
+  ggplot(data=.) +
+  geom_col(aes(x="Coh",y=Freq,fill=Var1)) +
+  theme_bw() +
+  coord_flip() + 
+  xlab("") +
+  theme(legend.position = "bottom",axis.title.x=element_blank(),axis.title.y=element_blank()) +
+  labs(fill="Cohort") +
+  scale_fill_viridis(discrete=T,labels = c("Combat", "MST")))
+(age_dist<-data %>% 
+  ggplot(data=.,aes(x="Age",y=age)) +
+  geom_violin() +
+  geom_boxplot(width=0.1) +
+  theme_bw() +
+  coord_flip() + 
+  xlab("")+
+  ylab("Age")+
+  theme(axis.title.x=element_blank(),axis.title.y=element_blank()) +
+  scale_fill_viridis(discrete=T))
+(nineleven_dist<-data.frame(table(data$post911)/nrow(data) * 100) %>% 
+  ggplot(data=.) +
+  geom_col(aes(x="9/11",y=Freq,fill=Var1)) +
+  theme_bw() +
+  coord_flip() + 
+  xlab("") +
+  theme(legend.position = "bottom",axis.title.x=element_blank(),axis.title.y=element_blank()) +
+  labs(fill="pre/post 9-11") +
+  scale_fill_viridis(discrete=T,labels=c("Pre","Post")))
+(branch_dist<-data.frame(table(data$branch)/nrow(data) * 100) %>% 
+  ggplot(data=.) +
+  geom_col(aes(x="Brn",y=Freq,fill=Var1)) +
+  theme_bw() +
+  coord_flip() + 
+  xlab("") +
+  theme(legend.position = "bottom",axis.title.x=element_blank(),axis.title.y=element_blank()) +
+  labs(fill="Branch") +
+  scale_fill_viridis(discrete=T,labels=c("Army","Air","Marine","Navy","Coast")))
+(ethnic_dist<-data.frame(table(data$ethnic)/nrow(data) * 100) %>% 
+  ggplot(data=.) +
+  geom_col(aes(x="Eth",y=Freq,fill=Var1)) +
+  theme_bw() +
+  coord_flip() + 
+  xlab("") +
+  theme(legend.position = "bottom",axis.title.x=element_blank(),axis.title.y=element_blank()) +
+  labs(fill="Ethnicity") +
+  scale_fill_viridis(discrete=T,labels=c("Non-Hisp","Hisp")))
+(race_dist<-data.frame(table(data$race)/nrow(data) * 100) %>% 
+  ggplot(data=.) +
+  geom_col(aes(x="Race",y=Freq,fill=Var1)) +
+  theme_bw() +
+  coord_flip() + 
+  xlab("") +
+  theme(legend.position = "bottom",axis.title.x=element_blank(),axis.title.y=element_blank()) +
+  labs(fill="Race") +
+  scale_fill_viridis(discrete=T,labels=c("White","Non-White")))
+(marriage_dist<-data.frame(table(data$married)/nrow(data) * 100) %>% 
+  ggplot(data=.) +
+  geom_col(aes(x="Mar",y=Freq,fill=Var1)) +
+  theme_bw() +
+  coord_flip() + 
+  xlab("") +
+  theme(legend.position = "bottom",axis.title.x=element_blank(),axis.title.y=element_blank()) +
+  labs(fill="Marriage Status") +
+  scale_fill_viridis(discrete=T,labels=c("Single","Partnered","Other")))
+(edu_dist<-data.frame(table(data$education)/nrow(data) * 100) %>% 
+  ggplot(data=.) +
+  geom_col(aes(x="Edu",y=Freq,fill=Var1)) +
+  theme_bw() +
+  coord_flip() + 
+  xlab("") +
+  theme(legend.position = "bottom",axis.title.x=element_blank(),axis.title.y=element_blank()) +
+  labs(fill="Education Attained") +
+  scale_fill_viridis(discrete=T,labels=c("DNF HS","HS grad","Trade","Some college","Associate","Bachelor","Master","Doctoral")))
+(deploy_dist<-data.frame(table(data$deployed)/nrow(data) * 100) %>% 
+  ggplot(data=.) +
+  geom_col(aes(x="Dep",y=Freq,fill=Var1)) +
+  theme_bw() +
+  xlab("") +
+  theme(legend.position = "bottom",axis.title.x=element_blank(),axis.title.y=element_blank()) +
+  coord_flip() +
+  labs(fill="Deployment Staus") +
+  scale_fill_viridis(discrete=T,labels=c("Not Deployed","Deployed")))
+```
+
+# general demographics
+
+age, sex, ethnicity, race, marriage status, educational attainment
+
+```{r}
+
+
+age_dist #Mean age is 41 +- 9.5
+sex_dist # 
+ethnic_dist #19% Hispanic - 0 non hispanic 1 hispanic
+race_dist #32% Non-White - 0 Wwite, 1 non white
+marriage_dist #Almost 50/50 Single vs legal partnership with small percentage Other 
+edu_dist # 88% of people have at least some college or vocational training
+
+plot_grid(age_dist ,sex_dist,ethnic_dist,race_dist,ncol=1,align="v") + ggsave(dir %&% "basic_demographics.png",dpi=500)
+plot_grid(marriage_dist,edu_dist,ncol=1,align="v") + ggsave(dir %&% "auxillary_demographic.png",dpi=500)
+```
+
+# military demographics
+
+deployment, branch, pre-post 911, cohort
+
+```{r}
+branch_dist #64% were in the army, 15% marines
+nineleven_dist #91% of people served prior to 9-11 - 0 is
+deploy_dist #almost 80% were deployed 
+cohort_dist # 68% are victims of military sexual trauma (majority of this is Females)
+plot_grid(branch_dist,nineleven_dist,deploy_dist,cohort_dist,ncol=1,align="v") + ggsave(dir %&% "military_career_demographic.png",dpi=500,height=7,width=7)
+```
+
+```{r}
+demographic_data<-data[,1:10] %>% drop_na() %>% mutate(sex=as.numeric(as.factor(sex)) - 1)
+
+fviz_nbclust(demographic_data,kmeans,method="wss")
+kclus<-kmeans(demographic_data,4)
+
+clustered_demo_data<-cbind.data.frame(cluster=as.factor(kclus$cluster),demographic_data)
+Fvec<-rep(NA,ncol(demographic_data))
+for (f in 1:ncol(demographic_data)){
+  feature<-colnames(demographic_data)[f]
+  anovatest<-anova(lm(as.formula(feature %&% " ~ cluster"),data=clustered_demo_data))
+  Fvec[f]<-anovatest$`F value`[1]
+}
+cbind.data.frame(Fvec,colnames(demographic_data)) %>% arrange(Fvec)
+
+```
+
+```{r}
+library(plotly)
+fig <- plot_ly(clustered_demo_data, x = ~age, y = ~sex, z = ~cohorttype,)
+fig <- fig %>% add_markers()
+fig <- fig %>% layout(scene = list(xaxis = list(title = 'age'),
+                     yaxis = list(title = '911 status'),
+                     zaxis = list(title = 'cohort')))
+fig
+```
+
+
+```{r}
+
+demographic_pca<-scale(demographic_data,center=T) %>% princomp()
+summary(demographic_pca)
+demographic_pca$loadings
+```
+
+```{r}
+psychiatric_data<-data[,11:28] %>% dplyr::select(-responder) %>% drop_na()
+
+fviz_nbclust(psychiatric_data,kmeans,method="wss")
+kclus<-kmeans(psychiatric_data,4)
+
+clustered_demo_data<-cbind.data.frame(cluster=as.factor(kclus$cluster),psychiatric_data)
+Fvec<-rep(NA,ncol(psychiatric_data))
+for (f in 1:ncol(psychiatric_data)){
+  feature<-colnames(psychiatric_data)[f]
+  anovatest<-anova(lm(as.formula(feature %&% " ~ cluster"),data=clustered_demo_data))
+  Fvec[f]<-anovatest$`F value`[1]
+}
+cbind.data.frame(Fvec,colnames(psychiatric_data)) %>% arrange(Fvec)
+
+```
+
+```{r}
+fig <- plot_ly(clustered_demo_data, x = ~ptcibaseline, y = ~phqbaseline, z = ~mies,color=~cluster)
+fig <- fig %>% add_markers()
+fig <- fig %>% layout(scene = list(xaxis = list(title = 'ptcibaseline'),
+                     yaxis = list(title = 'phqbaseline'),
+                     zaxis = list(title = 'mies')))
+fig
+```
+
+
+
+```{r}
+psychiatric_pca<-scale(psychiatric_data,center=T) %>% princomp(.)
+summary(psychiatric_pca)
+<-psychiatric_pca$loadings
+```
+
+```{r}
+labelled_data<-data %>% drop_na()
+total_data <- labelled_data %>% dplyr::select(-responder) %>% mutate(sex=as.numeric(as.factor(sex)) - 1)
+psychiatric_data<-labelled_data[,11:28] %>% dplyr::select(-responder)
+demographic_data<-labelled_data[,1:10] %>% drop_na() %>% mutate(sex=as.numeric(as.factor(sex)) - 1)
+psychiatric_pca<-scale(psychiatric_data,center=T) %>% princomp(.)
+demographic_pca<-scale(demographic_data,center=T) %>% princomp(.)
+total_pca<-scale(total_data,center=T) %>% princomp(.)
+summary(total_pca)
+total_pca$loadings
+labelled_data_with_PCs<-cbind(labelled_data,
+                              data.frame(psycPC1=psychiatric_pca$scores[,1],
+                                         psycPC2=psychiatric_pca$scores[,2],
+                                         psycPC3=psychiatric_pca$scores[,3],
+                                         demoPC1=demographic_pca$scores[,1],
+                                         demoPC2=demographic_pca$scores[,2],
+                                         demoPC3=demographic_pca$scores[,3],
+                                         totalPC1=total_pca$scores[,1],
+                                         totalPC2=total_pca$scores[,2],
+                                         totalPC3=total_pca$scores[,3]))
+
+ggplot(labelled_data_with_PCs,aes(x=demoPC1,y=psycPC1,colour=responder)) +
+  geom_point() +
+  theme_bw()
+
+ggplot(labelled_data_with_PCs,aes(y=demoPC1,x=responder)) +
+  geom_point() +
+  theme_bw()
+ggplot(labelled_data_with_PCs,aes(y=psycPC1,x=responder)) +
+  geom_point() +
+  theme_bw()
+ggplot(labelled_data_with_PCs,aes(x=totalPC1,y=totalPC2,colour=responder,shape=sex)) +
+  geom_point() +
+  theme_bw()
+ggplot(labelled_data_with_PCs,aes(x=totalPC1,y=psycPC1,colour=responder,shape=sex)) +
+  geom_point() +
+  theme_bw()
+ggplot(labelled_data_with_PCs,aes(x=totalPC2,y=demoPC1,colour=responder,shape=sex)) +
+  geom_point() +
+  theme_bw()
+ggplot(labelled_data_with_PCs,aes(x=as.factor(responder),y=psycPC1)) +
+  geom_violin() +
+  theme_bw()
+
+demo_pc_response<-labelled_data_with_PCs %>% dplyr::select(demoPC1,responder) %>% mutate(variable="demographic") %>% rename(PC="demoPC1")
+psyc_pc_response<-labelled_data_with_PCs %>% dplyr::select(psycPC1,responder) %>% mutate(variable="psychiatric") %>% rename(PC="psycPC1")
+
+compare_pc_response<-bind_rows(demo_pc_response,psyc_pc_response)
+gviolin<-ggplot(data=compare_pc_response,aes(x=as.factor(responder),y=PC)) +
+  geom_violin(aes(fill=variable)) +
+  geom_boxplot(aes(group=interaction(variable,responder)),position = position_dodge(.9),width=0.1) +
+  scale_fill_viridis(discrete = T) +
+  ylab("First Principal Component") +
+  xlab("Responder") +
+  theme_bw() 
+gsmooth<-ggplot(labelled_data_with_PCs) +
+  geom_smooth(aes(x=responder,y=psycPC1),method="lm",colour="yellow") +
+  geom_smooth(aes(x=responder,y=-demoPC1),method="lm",colour="purple") + 
+  ylab("First Principal Component") +
+  xlab("Responder") +
+  theme_bw() 
+
+grid<-plot_grid(gviolin + theme(legend.position="none"),gsmooth,ncol = 1,labels=c("A","B"))
+legend <- get_legend(
+  gviolin +
+    guides(color = guide_legend(nrow = 1)) +
+    theme(legend.position = "bottom")
+)
+plot_grid(grid, legend,ncol = 1, rel_heights = c(1, .1)) +
+  ggsave(dir %&% "pca_effect_plot_grid.png",dpi=500)
+  
+
+ggplot(labelled_data_with_PCs,aes(x=as.factor(responder),y=psycPC1)) +
+  geom_violin() +
+  ylab("First PC") +
+  theme_bw()
+
+
+
+anova(glm(responder ~ psycPC1,family="binomial",data=labelled_data_with_PCs),test="Chisq")
+anova(glm(responder ~ demoPC1,family="binomial",data=labelled_data_with_PCs),test="Chisq")
+anova(glm(responder ~ demoPC1 + psycPC1,family="binomial",data=labelled_data_with_PCs),test="Chisq")
+anova(glm(responder ~ totalPC1 + psycPC1  + demoPC1,family="binomial",data=labelled_data_with_PCs),test="Chisq")
+
+gsmooth
+```
+
+```{r}
+plot(psychiatric_pca)
+plot(demographic_pca)
+plot(total_pca)
+
+
+
+labelled_data_with_PCs %>%
+  mutate(sex=as.numeric(as.factor(sex)) - 1) %>%
+  cor() %>%
+  corrplot()
+```
+
+```{r}
+saveRDS(labelled_data_with_PCs,dir %&% "labelled_data_with_PCs.RDS")
+```

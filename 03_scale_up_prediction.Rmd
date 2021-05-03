@@ -1,0 +1,183 @@
+---
+title: "comprehensive model building"
+author: "Ryan Schubert"
+date: "April 28, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(data.table)
+library(ggplot2)
+library(corrplot)
+library(visdat)
+library(viridis)
+library(glmnet)
+library(randomForest)
+library(e1071)
+library(MASS)
+library(MLmetrics)
+library(gbm)
+"%&%" = function(a,b) paste0(a,b)
+set.seed(1234)
+```
+
+## R Markdown
+
+
+```{r cars}
+dir<-"C:\\Users\\rshoo\\OneDrive\\Desktop\\Rush Interview\\"
+data<-readRDS(dir %&% "labelled_data_with_pcs.RDS")
+
+#female is now 0, male is now 1
+labelled_data1<-data %>% mutate(sex=as.numeric(as.factor(sex))-1)
+```
+
+## first lets cv algorithms and simply drop obs with missing data
+
+I want to test the following types of models
+
+random forest
+naive logistic
+logistic ridge
+logistic elastic net (only going to test alpha of 0.5)
+logistic lasso
+
+SVM radial
+SVM linear
+svm polynomial
+
+
+lda
+qda
+gradient boosting
+
+ensembling
+ensemble of gboost trees
+
+neural network
+
+```{r}
+labelled_data1<-labelled_data1 %>% drop_na()
+
+rank<-20
+ranking<-matrix(NA,nrow=12,ncol=rank)
+performance<-matrix(NA,nrow=12,ncol=rank)
+for (r in 1:rank){
+  k<-10
+  fold_ids<-sample(1:10,nrow(labelled_data1),replace=T)
+  cols<-c("RF","logistic","ridge","alpha0.5","LASSO","svmLinear","svmRadial","svmPolynomial","LDA","GBM","ensemble1","ensemble2")
+  misclass_rate<-matrix(NA,nrow = k,ncol=12)
+  logloss_rate<-matrix(NA,nrow = k,ncol=12)
+  colnames(misclass_rate)<-cols
+  colnames(logloss_rate)<-cols
+  
+  
+  
+  for (fold in 1:k){
+    holdout<-labelled_data1[fold_ids == fold,]
+    holdin<-labelled_data1[fold_ids != fold,]
+    ensemble_votes<-matrix(NA,nrow=nrow(holdout),ncol=10)
+    #estimate performance for RF
+    CVRFModel<-randomForest(as.factor(responder) ~ ., data=holdin,ntree=500)
+    logloss_rate[fold,1]<-LogLoss(predict(CVRFModel,holdout,type="prob")[,2],holdout$responder)
+    confusion<-table(predict(CVRFModel,holdout,type="response"),holdout$responder)
+    misclass_rate[fold,1]<-1-sum(diag(confusion))/sum(confusion)
+    ensemble_votes[,1]<-predict(CVRFModel,holdout,type="prob")[,2]
+    
+    #estimate performance for naive logistic model
+    naiveLog<-glm(responder ~ .,data=holdin,family=binomial())
+    logloss_rate[fold,2]<-LogLoss(predict(naiveLog,holdout,type="response"),holdout$responder)
+    confusion<-table(round(predict(naiveLog,holdout,type="response")),holdout$responder)
+    misclass_rate[fold,2]<-1-sum(diag(confusion))/sum(confusion)
+    ensemble_votes[,2]<-predict(naiveLog,holdout,type="response")
+    
+    #estimate performance for ridge
+    y<-holdin %>% dplyr::select(responder) %>% unlist() %>% unname()
+    x<-holdin %>% dplyr::select(-responder) %>% as.matrix()
+    
+    y_out<-holdout %>% dplyr::select(responder) %>% unlist() %>% unname()
+    x_out<-holdout %>% dplyr::select(-responder) %>% as.matrix()
+    ridgeModel<-cv.glmnet(x=x,y=y,family="binomial",alpha=0)
+    logloss_rate[fold,3]<-LogLoss(predict(ridgeModel,x_out,type="response",s="lambda.1se"),y_out)
+    confusion<-table(round(predict(ridgeModel,x_out,type="response",s="lambda.1se")),y_out)
+    misclass_rate[fold,3]<-1-sum(diag(confusion))/sum(confusion)
+    ensemble_votes[,3]<-predict(ridgeModel,x_out,type="response",s="lambda.1se")
+    
+    #estimate elastic net with alpha = 0.5
+    eNetModel<-cv.glmnet(x=x,y=y,family="binomial",alpha=0.5)
+    logloss_rate[fold,4]<-LogLoss(predict(eNetModel,x_out,type="response",s="lambda.1se"),y_out)
+    confusion<-table(round(predict(eNetModel,x_out,type="response",s="lambda.1se")),y_out)
+    misclass_rate[fold,4]<-1-sum(diag(confusion))/sum(confusion)
+    ensemble_votes[,4]<-predict(eNetModel,x_out,type="response",s="lambda.1se")
+    
+    #estimate LASSO
+    LASSOModel<-cv.glmnet(x=x,y=y,family="binomial",alpha=0.5)
+    logloss_rate[fold,5]<-LogLoss(predict(LASSOModel,x_out,type="response",s="lambda.1se"),y_out)
+    confusion<-table(round(predict(LASSOModel,x_out,type="response",s="lambda.1se")),y_out)
+    misclass_rate[fold,5]<-1-sum(diag(confusion))/sum(confusion)
+    ensemble_votes[,5]<-predict(LASSOModel,x_out,type="response",s="lambda.1se")
+    
+    #estimate SVM linear
+    linearSVM<-svm(responder ~.,type="C-classification",data=holdin,kernel="linear",probability=T)
+    logloss_rate[fold,6]<-LogLoss(attr(predict(linearSVM,holdout,probability=T),"probabilities")[,2],holdout$responder)
+    confusion<-table(round(as.numeric(as.character(predict(linearSVM,holdout)))),holdout$responder)
+    misclass_rate[fold,6]<-1-sum(diag(confusion))/sum(confusion)
+    ensemble_votes[,6]<-attr(predict(linearSVM,holdout,probability=T),"probabilities")[,2]
+    
+    #estimate radial SVM
+    radialSVM<-svm(responder ~.,type="C-classification",data=holdin,kernel="radial",probability=T)
+    logloss_rate[fold,7]<-LogLoss(attr(predict(radialSVM,holdout,probability=T),"probabilities")[,2],holdout$responder)
+    confusion<-table(round(as.numeric(as.character(predict(radialSVM,holdout)))),holdout$responder)
+    misclass_rate[fold,7]<-1-sum(diag(confusion))/sum(confusion)
+    ensemble_votes[,7]<-attr(predict(radialSVM,holdout,probability=T),"probabilities")[,2]
+    
+    #estimate polynomial
+    polynomialSVM<-svm(responder ~.,type="C-classification",data=holdin,kernel="polynomial",probability=T)
+    logloss_rate[fold,8]<-LogLoss(attr(predict(polynomialSVM,holdout,probability=T),"probabilities")[,2],holdout$responder)
+    confusion<-table(round(as.numeric(as.character(predict(polynomialSVM,holdout)))),holdout$responder)
+    misclass_rate[fold,8]<-1-sum(diag(confusion))/sum(confusion)
+    ensemble_votes[,8]<-attr(predict(polynomialSVM,holdout,probability=T),"probabilities")[,2]
+    
+    #test linear  discanalysis
+    ldaModel<-lda(responder ~ .,data=holdin)
+    logloss_rate[fold,9]<-LogLoss(predict(ldaModel,holdout)$posterior[,2],holdout$responder)
+    confusion<-table(predict(ldaModel,holdout)$class,holdout$responder)
+    misclass_rate[fold,9]<-1-sum(diag(confusion))/sum(confusion)
+    ensemble_votes[,9]<-predict(ldaModel,holdout)$class
+    
+    #gradient boosted model 
+    gbmModel<-gbm(responder ~ .,data=holdin,distribution="bernoulli") 
+    logloss_rate[fold,10]<-LogLoss(predict(gbmModel,holdout,type="response"),holdout$responder)
+    confusion<-table(round(predict(gbmModel,holdout,type="response")),holdout$responder)
+    misclass_rate[fold,10]<-1-sum(diag(confusion))/sum(confusion)
+    ensemble_votes[,10]<-predict(gbmModel,holdout,type="response")
+    
+    
+    confusion<-table(round(rowMeans(ensemble_votes)),holdout$responder)
+    misclass_rate[fold,11]<-1-sum(diag(confusion))/sum(confusion)
+    confusion<-table(round(rowMeans(round(ensemble_votes))),holdout$responder)
+    misclass_rate[fold,12]<-1-sum(diag(confusion))/sum(confusion)
+  }
+  
+  performance[,r]<-colMeans(misclass_rate) %>% sort() #%>% names()
+  ranking[,r]<-colMeans(misclass_rate) %>% sort() %>% names()
+}
+#colMeans(logloss_rate)%>% sort()
+```
+
+```{r}
+rLong<-ranking %>% as.data.frame() %>% mutate(rank=1:12) %>% pivot_longer(!rank) %>% rename(iter="name") %>% mutate(iter=gsub("V","",iter),iter=as.numeric(iter))
+pLong<-performance %>% as.data.frame() %>% mutate(r=1:12) %>% pivot_longer(!r) %>% dplyr::select(-name) %>% rename("performance"="value")
+performance_metrics<-cbind.data.frame(pLong,rLong)
+approximate_ranking<-tapply(performance_metrics$rank,performance_metrics$value,mean)
+approximate_ranking %>% sort()
+approximate_performance<-tapply(performance_metrics$performance,performance_metrics$value,mean)
+approximate_performance %>% sort()
+
+ggplot(data=performance_metrics,aes(x=iter,y=rank,colour=value)) +
+  geom_point()
+```
+Random forest tends to be the best performing out of all the methods
+

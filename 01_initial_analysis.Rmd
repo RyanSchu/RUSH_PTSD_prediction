@@ -1,0 +1,139 @@
+---
+title: "Exploratory data analysis"
+author: "Ryan Schubert"
+date: "April 27, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(data.table)
+library(ggplot2)
+library(corrplot)
+library(visdat)
+library(viridis)
+library(glmnet)
+"%&%" = function(a,b) paste0(a,b)
+```
+
+## Read in the data
+
+```{r}
+dir<-"C:\\Users\\rshoo\\OneDrive\\Desktop\\Rush Interview\\"
+data<-fread(dir %&% "DSRound2Task.csv")
+
+str(data)
+
+#ids is redundant and won't be used for prediction so remove it here
+ids<-data %>% dplyr::select(id)
+#convert sex to numeric
+#female is now 0, male is now 1
+data<-data %>% dplyr::select(-id) %>% mutate(sex=as.numeric(as.factor(sex))-1)
+```
+
+## basic summarizations
+
+search for missingness among the data
+search for multicolinearity within the data
+
+
+```{r}
+summary(data)
+vis_dat(data) + scale_fill_viridis(discrete = T)
+data[is.na(data$responder),] %>% nrow()
+```
+Immediately we see that our response has some missingness in it. This data can't be used for supervised learning so we will have to discard observations with missing responses. With this we lose 25 observations.
+
+```{r}
+unlabelled_data<-data[is.na(data$responder),]
+labelled_data<-data[!is.na(data$responder),]
+
+vis_dat(labelled_data)
+
+```
+
+Most of our remaining variables are complete, with a handful with a small % of missing variables. However, the variables relating to the CAPS scores is missing roughly 10% of it's data. At this stage we will not remove observations or variables with missing data yet, as we have not decided what we are using for prediction.
+
+First lets examine some demographic variables
+
+```{r}
+
+g<-ggplot(data=labelled_data) +
+  theme_bw()
+g + geom_bar(aes(x=sex),position = position_dodge())
+g + geom_bar(aes(x=post911),position = position_dodge())
+g + geom_violin(aes(x="Age",y=age)) + geom_boxplot(aes(x="Age",y=age),width=0.1) + coord_flip()
+g + geom_violin(aes(x="Age",y=age)) + geom_boxplot(aes(x="Age",y=age),width=0.1) + coord_flip()
+```
+
+
+```{r}
+DataCorrelations<-cor(labelled_data,method="spearman",use="pairwise.complete.obs") #Spearman correlation as it is more robust to rank data
+corrplot(DataCorrelations)
+hist(as.data.frame(DataCorrelations)$responder,breaks=10)
+g + geom_point(aes(x=responder,y=ptcibaseline)) + geom_smooth(aes(x=responder,y=ptcibaseline),method="lm",se=F)
+g + geom_point(aes(x=responder,y=phqbaseline)) + geom_smooth(aes(x=responder,y=phqbaseline),method="lm",se=F)
+```
+not an extreme amount multicolinearity among the variables. As I would have expected, baseline PCL scores appear correlated with one another. There is not a strong correlation with responder, however a handful of variables are mildly/moderately correlated with responder. Among these only ptcibaseline and phqbaseline have a correlation coefficient greater than 0.2. 
+
+Lets build a few simple models and cross validate them
+1. Naive model with all variables as predictors
+2. Naive model with all nonmissing variables as predictors
+3. Agnostic model doing stepwise variable selection
+4. Non-agnostic model fitting ptcibaseline and phqbaseline as predictors
+
+here I am just hoping to get an initial estimate of predictive performance before jumping into a larger suite of methods. Additionally I wat to get a feel for how missingness is affecting our predictions. These caps variables in particular are problematic. They may be useful, but they have a larger proportion of missingness than other variables. Does removing them from our prediction negatively impact performance? should individuals without caps scores have a separate prediction model? The other variables with missingness are missing a much smaller proportion of data, so I would be okay with discarding those observations.
+
+
+```{r}
+
+estimate_misclass_rate<-function(model,test){
+  confusion<-table(round(predict.glm(model,holdout,type="response")),test$responder)
+  misclass<-1-sum(diag(confusion))/sum(confusion)
+  return(misclass)
+}
+
+k<-10
+fold_ids<-sample(1:k,nrow(labelled_data),replace=T)
+misclass_matrix<-matrix(NA,nrow=k,ncol=5)
+for (fold in 1:k){
+  holdout<-labelled_data[fold_ids==fold,]
+  holdin1<-labelled_data[fold_ids!=fold,] %>% drop_na()
+  holdin2<-labelled_data[fold_ids!=fold,] %>% dplyr::select(-capsb,-capsc,-capsd,-capse) %>% drop_na()
+  #naive_model with all variables
+  naive1<-glm(responder ~ .,data=holdin1,family=binomial())
+  naive2<-glm(responder ~.,data=holdin2,family=binomial())
+  agnostic1<-stepAIC(naive1.trace=0)
+  agnostic2<-stepAIC(naive2,trace=0)
+  nonagnostic<-glm(responder ~ ptcibaseline + phqbaseline,data=holdin1,family=binomial())
+  
+  #estimate_performances
+  misclass_matrix[fold,1]<-estimate_misclass_rate(naive1,holdout)
+  misclass_matrix[fold,2]<-estimate_misclass_rate(naive2,holdout)
+  misclass_matrix[fold,3]<-estimate_misclass_rate(agnostic1,holdout)
+  misclass_matrix[fold,4]<-estimate_misclass_rate(agnostic2,holdout)
+  misclass_matrix[fold,5]<-estimate_misclass_rate(nonagnostic,holdout)
+
+}
+labelled_data1<-labelled_data %>% drop_na()
+labelled_data2<-labelled_data %>% dplyr::select(-capsb,-capsc,-capsd,-capse) %>% drop_na()
+naive1<-glm(responder ~ .,data=labelled_data1,family=binomial())
+naive2<-glm(responder ~.,data=labelled_data2,family=binomial())
+agnostic1<-stepAIC(naive1,trace=0)
+agnostic2<-stepAIC(naive2,trace=0)
+nonagnostic<-glm(responder ~ ptcibaseline + phqbaseline,data=labelled_data,family=binomial())
+
+
+```
+
+we can see from the colmeans that our simplest model, the nonagnostic model, is the best performing. This is not an unexpected result. next I'd like to test specifically if including something like the capsd is important
+
+```{r}
+colMeans(misclass_matrix)
+test<-labelled_data %>% dplyr::select(responder,ptcibaseline , phqbaseline , capsb , capsc , capsd , capse) %>% drop_na()
+nonagnostic1<-glm(responder ~ ptcibaseline + phqbaseline,data=test,family=binomial())
+nonagnostic2<-glm(responder ~ ptcibaseline + phqbaseline + capsb + capsc + capsd + capse,data=test,family=binomial())
+anova(nonagnostic1,nonagnostic2,test="Chisq")
+```
+the naive model
