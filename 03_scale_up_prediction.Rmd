@@ -43,19 +43,12 @@ naive logistic
 logistic ridge
 logistic elastic net (only going to test alpha of 0.5)
 logistic lasso
-
 SVM radial
 SVM linear
 svm polynomial
-
-
 lda
-qda
 gradient boosting
-
 ensembling
-ensemble of gboost trees
-
 neural network
 
 ```{r}
